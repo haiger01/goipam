@@ -15,7 +15,6 @@ func TestIP4Bitmap(t *testing.T) {
 
 	testIP4Bitmap(t, from, to, ipam)
 
-
 	from, _ = IP2long("192.168.0.0")
 	to, _ = IP2long("192.168.1.255")
 	ipam, err = NewIP4BitmapFromSubnet("192.168.1.0/23")
@@ -37,7 +36,7 @@ func testIP4Bitmap(t *testing.T, from uint32, to uint32, ipam *IP4Bitmap) {
 	var i int64
 
 	// assign
-	for i = int64(from) ; i <= int64(to); i++ {
+	for i = int64(from); i <= int64(to); i++ {
 		ip := ipam.Assign()
 		if ip < 0 {
 			t.Errorf("can not assign ip %s(%d)", Long2ip(uint32(i)), i)
@@ -63,12 +62,12 @@ func testIP4Bitmap(t *testing.T, from uint32, to uint32, ipam *IP4Bitmap) {
 	}
 
 	// release all
-	for i := from ; i <= to; i++ {
+	for i := from; i <= to; i++ {
 		ipam.Release(i)
 	}
 
 	// assign all again
-	for i = int64(from) ; i <= int64(to); i++ {
+	for i = int64(from); i <= int64(to); i++ {
 		ip := ipam.Assign()
 		if ip < 0 {
 			t.Errorf("can not assign ip %s(%d)", Long2ip(uint32(i)), i)

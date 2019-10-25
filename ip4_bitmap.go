@@ -7,6 +7,7 @@ import (
 )
 
 type IP4BitmapStatus int8
+
 const (
 	IP4_BITMAP_STATUS_RUNNING IP4BitmapStatus = iota
 	IP4_BITMAP_STATUS_STOPPING
@@ -23,7 +24,7 @@ type IP4Bitmap struct {
 	assignChannel  chan int64
 	releaseChannel chan uint32
 	stopChannel    chan struct{}
-	status IP4BitmapStatus
+	status         IP4BitmapStatus
 	// closeChannel chan struct{}
 }
 
@@ -31,7 +32,7 @@ func NewIP4BitmapFromRange(from uint32, to uint32) (*IP4Bitmap, error) {
 	if from > to {
 		return nil, errors.New("invalid ip range")
 	}
-	count := int64(to - from) + 1
+	count := int64(to-from) + 1
 	bitmapSize := int(count/8 + 1)
 	ip4Bitmap := &IP4Bitmap{
 		base:           from,
@@ -75,7 +76,7 @@ func NewIP4BitmapFromSubnet(subnet string) (*IP4Bitmap, error) {
 		}
 	}
 
-	return NewIP4BitmapFromRange(ip & mask, ip | (^mask))
+	return NewIP4BitmapFromRange(ip&mask, ip|(^mask))
 }
 
 func (i *IP4Bitmap) Assign() int64 {
@@ -104,7 +105,7 @@ func (i *IP4Bitmap) assign() (ip int64) {
 		if bufferByte != 0xff {
 			currentBitPosition := p * 8
 			for j := 0; j < 8; j++ {
-				if int64(currentBitPosition) + int64(j) >= i.count {
+				if int64(currentBitPosition)+int64(j) >= i.count {
 					return
 				}
 				if bufferByte&1 == 0 {
@@ -120,7 +121,7 @@ func (i *IP4Bitmap) assign() (ip int64) {
 }
 
 func (i *IP4Bitmap) release(ip uint32) error {
-	if ip < i.base || ip > i.base + uint32(i.count) {
+	if ip < i.base || ip > i.base+uint32(i.count) {
 		return errors.New("ip out of range")
 	}
 	bitCount := ip - i.base
