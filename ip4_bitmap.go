@@ -20,11 +20,12 @@ type IP4Bitmap struct {
 	bitmapSize int
 	bitmap     []byte
 
-	assignRequest  chan struct{}
-	assignChannel  chan int64
-	releaseChannel chan uint32
-	stopChannel    chan struct{}
-	status         IP4BitmapStatus
+	assignRequest         chan struct{}
+	assignSpecificRequest chan uint32
+	assignChannel         chan int64
+	releaseChannel        chan uint32
+	stopChannel           chan struct{}
+	status                IP4BitmapStatus
 	// closeChannel chan struct{}
 }
 
@@ -35,20 +36,33 @@ func NewIP4BitmapFromRange(from uint32, to uint32) (*IP4Bitmap, error) {
 	count := int64(to-from) + 1
 	bitmapSize := int(count/8 + 1)
 	ip4Bitmap := &IP4Bitmap{
-		base:           from,
-		count:          count,
-		bitmapSize:     bitmapSize,
-		bitmap:         make([]byte, bitmapSize),
-		assignRequest:  make(chan struct{}),
-		assignChannel:  make(chan int64),
-		releaseChannel: make(chan uint32),
-		stopChannel:    make(chan struct{}),
-		status:         IP4_BITMAP_STATUS_STOPPED,
+		base:                  from,
+		count:                 count,
+		bitmapSize:            bitmapSize,
+		bitmap:                make([]byte, bitmapSize),
+		assignRequest:         make(chan struct{}),
+		assignSpecificRequest: make(chan uint32),
+		assignChannel:         make(chan int64),
+		releaseChannel:        make(chan uint32),
+		stopChannel:           make(chan struct{}),
+		status:                IP4_BITMAP_STATUS_STOPPED,
 		// closeChannel: make(chan struct{}),
 	}
 
 	go ip4Bitmap.handler()
 	return ip4Bitmap, nil
+}
+
+func NewIP4BitmapFromStringRange(from string, to string) (*IP4Bitmap, error) {
+	uint32From, err := IP2long(from)
+	if err != nil {
+		return nil, errors.New("NewIP4BitmapFromStringRange(): invalid start ip")
+	}
+	uint32To, err := IP2long(to)
+	if err != nil {
+		return nil, errors.New("NewIP4BitmapFromStringRange(): invalid end ip")
+	}
+	return NewIP4BitmapFromRange(uint32From, uint32To)
 }
 
 func NewIP4BitmapFromSubnet(subnet string) (*IP4Bitmap, error) {
@@ -82,6 +96,11 @@ func NewIP4BitmapFromSubnet(subnet string) (*IP4Bitmap, error) {
 func (i *IP4Bitmap) Assign() int64 {
 	i.assignRequest <- struct{}{}
 	return <-i.assignChannel
+}
+
+func (i *IP4Bitmap) AssignSpecificIP(ip uint32) bool {
+	i.assignSpecificRequest <- ip
+	return <-i.assignChannel > 0
 }
 
 func (i *IP4Bitmap) Release(ip uint32) {
@@ -120,14 +139,24 @@ func (i *IP4Bitmap) assign() (ip int64) {
 	return
 }
 
+func (i *IP4Bitmap) assignSpecificIP(ip uint32) int64 {
+	if i.IsIPOutOfRange(ip) {
+		return -1
+	}
+	_, byteIndex, bitIndex := i.calculatePosition(ip)
+	if (i.bitmap[byteIndex] >> bitIndex) & 1 == 0 {
+		i.bitmap[byteIndex] = i.bitmap[byteIndex] | byte(1 << bitIndex)
+		return int64(ip)
+	}
+	return -1
+}
+
 func (i *IP4Bitmap) release(ip uint32) error {
-	if ip < i.base || ip > i.base+uint32(i.count) {
+	if i.IsIPOutOfRange(ip) {
 		return errors.New("ip out of range")
 	}
-	bitCount := ip - i.base
-	byteIndex := bitCount / 8
-	bitIndex := bitCount % 8
-	i.bitmap[byteIndex] = i.bitmap[byteIndex] & (^uint8(1 << bitIndex))
+	_, byteIndex, bitIndex := i.calculatePosition(ip)
+	i.bitmap[byteIndex] = i.bitmap[byteIndex] & (^byte(1 << bitIndex))
 	return nil
 }
 
@@ -145,10 +174,27 @@ func (i *IP4Bitmap) handler() {
 		case ip = <-i.releaseChannel:
 			_ = i.release(ip)
 			break
+		case ip = <-i.assignSpecificRequest:
+			i.assignChannel <- i.assignSpecificIP(ip)
 		case <-i.stopChannel:
 			i.status = IP4_BITMAP_STATUS_STOPPING
 			goto EndHandler
 		}
 	}
 EndHandler:
+}
+
+func (i *IP4Bitmap) IsIPOutOfRange(ip uint32) bool {
+	return ip < i.base || ip > i.base+uint32(i.count)
+}
+
+func (i *IP4Bitmap) IsIPInRange(ip uint32) bool {
+	return !i.IsIPOutOfRange(ip)
+}
+
+func (i *IP4Bitmap) calculatePosition(ip uint32) (uint32, uint32, uint32) {
+	bitCount := ip - i.base
+	byteIndex := bitCount / 8
+	bitIndex := bitCount % 8
+	return bitCount, byteIndex, bitIndex
 }

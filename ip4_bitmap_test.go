@@ -85,6 +85,25 @@ func testIP4Bitmap(t *testing.T, from uint32, to uint32, ipam *IP4Bitmap) {
 		t.Errorf("assigned ip out of range")
 	}
 
+
+	if ipam.AssignSpecificIP(from + 1) != false {
+		t.Errorf("specific assign ip assign again")
+	}
+
+	// release all
+	for i := from; i <= to; i++ {
+		ipam.Release(i)
+	}
+
+	if ipam.AssignSpecificIP(from + 1) == false {
+		t.Errorf("can not assign specific ip")
+	}
+
+	ipam.Assign()
+	if ipam.Assign() == int64(from) + 1 {
+		t.Errorf("assign specific assigned ip again")
+	}
+
 	_ = ipam.Close()
 	time.Sleep(1 * time.Second)
 	if ipam.GetStatus() != IP4_BITMAP_STATUS_STOPPED {
