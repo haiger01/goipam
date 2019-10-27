@@ -15,7 +15,8 @@ const (
 )
 
 type IP4Bitmap struct {
-	base       uint32
+	from       uint32
+	to         uint32
 	count      int64
 	bitmapSize int
 	bitmap     []byte
@@ -26,7 +27,6 @@ type IP4Bitmap struct {
 	releaseChannel        chan uint32
 	stopChannel           chan struct{}
 	status                IP4BitmapStatus
-	// closeChannel chan struct{}
 }
 
 func NewIP4BitmapFromRange(from uint32, to uint32) (*IP4Bitmap, error) {
@@ -36,7 +36,8 @@ func NewIP4BitmapFromRange(from uint32, to uint32) (*IP4Bitmap, error) {
 	count := int64(to-from) + 1
 	bitmapSize := int(count/8 + 1)
 	ip4Bitmap := &IP4Bitmap{
-		base:                  from,
+		from:                  from,
+		to:                    to,
 		count:                 count,
 		bitmapSize:            bitmapSize,
 		bitmap:                make([]byte, bitmapSize),
@@ -46,7 +47,6 @@ func NewIP4BitmapFromRange(from uint32, to uint32) (*IP4Bitmap, error) {
 		releaseChannel:        make(chan uint32),
 		stopChannel:           make(chan struct{}),
 		status:                IP4_BITMAP_STATUS_STOPPED,
-		// closeChannel: make(chan struct{}),
 	}
 
 	go ip4Bitmap.handler()
@@ -112,7 +112,10 @@ func (i *IP4Bitmap) GetStatus() IP4BitmapStatus {
 }
 
 func (i *IP4Bitmap) Close() error {
-	close(i.stopChannel)
+	if i.stopChannel != nil {
+		close(i.stopChannel)
+		i.stopChannel = nil
+	}
 	return nil
 }
 
@@ -128,7 +131,7 @@ func (i *IP4Bitmap) assign() (ip int64) {
 					return
 				}
 				if bufferByte&1 == 0 {
-					ip = int64(i.base) + int64(p)*8 + int64(j)
+					ip = int64(i.from) + int64(p)*8 + int64(j)
 					i.bitmap[p] = i.bitmap[p] | byte(1<<j)
 					return
 				}
@@ -144,8 +147,8 @@ func (i *IP4Bitmap) assignSpecificIP(ip uint32) int64 {
 		return -1
 	}
 	_, byteIndex, bitIndex := i.calculatePosition(ip)
-	if (i.bitmap[byteIndex] >> bitIndex) & 1 == 0 {
-		i.bitmap[byteIndex] = i.bitmap[byteIndex] | byte(1 << bitIndex)
+	if (i.bitmap[byteIndex]>>bitIndex)&1 == 0 {
+		i.bitmap[byteIndex] = i.bitmap[byteIndex] | byte(1<<bitIndex)
 		return int64(ip)
 	}
 	return -1
@@ -185,15 +188,27 @@ EndHandler:
 }
 
 func (i *IP4Bitmap) IsIPOutOfRange(ip uint32) bool {
-	return ip < i.base || ip > i.base+uint32(i.count)
+	return ip < i.from || ip > i.to
 }
 
 func (i *IP4Bitmap) IsIPInRange(ip uint32) bool {
 	return !i.IsIPOutOfRange(ip)
 }
 
+func (i *IP4Bitmap) GetFirst() uint32 {
+	return i.from
+}
+
+func (i *IP4Bitmap) GetLast() uint32 {
+	return i.from
+}
+
+func (i *IP4Bitmap) Count() uint32 {
+	return uint32(i.count)
+}
+
 func (i *IP4Bitmap) calculatePosition(ip uint32) (uint32, uint32, uint32) {
-	bitCount := ip - i.base
+	bitCount := ip - i.from
 	byteIndex := bitCount / 8
 	bitIndex := bitCount % 8
 	return bitCount, byteIndex, bitIndex
